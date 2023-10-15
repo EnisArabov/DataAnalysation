@@ -14,6 +14,7 @@ import tkinter as tk
 from tkinter import simpledialog, messagebox
 import re
 import sqlite3
+import os
 
 # Function to go through the browser and find the text element
 def get_element_text(browser, xpath, wait_time=10):
@@ -42,11 +43,19 @@ while not is_valid_date(date):
 # Specific date until we will calculate the rewards 
 specific_date = pd.to_datetime(f'{date}')
 print(specific_date)
-# Folder path
-folder = 'C:\\Users\\Eni boy\\Desktop\\Web Srapping'
 
-# Creating Excel file
-writer1 = pd.ExcelWriter(folder + '\\' + f'Rewards{date}.xlsx')
+# Folder path
+base_folder = 'C:\\Users\\Eni boy\\Desktop\\Web Srapping'
+date_folder = os.path.join(base_folder, date)
+
+# Check if folder exists, if not create it
+if not os.path.exists(date_folder):
+    os.makedirs(date_folder)
+
+# Define the Excel file path to save within the date-named folder
+writer1 = pd.ExcelWriter(os.path.join(date_folder, f'Rewards{date}.xlsx'))
+
+
 
 # Read the excel with rewards
 df = pd.read_excel('./Cantina_Royale.xlsx')
@@ -173,13 +182,13 @@ browser = webdriver.Chrome(service=ser, options=chrome_options)
 
 # Open and Maximize window and opening the price chart
 browser.maximize_window()
-browser.get(f'https://www.coingecko.com/en/coins/cantina-royale')
-browser.implicitly_wait(5)
+browser.get(f'https://coinmarketcap.com/currencies/cantina-royale/')
+browser.implicitly_wait(20)
 
 #Locating CRT price 
-if browser.find_element(By.XPATH, '/html/body/div[3]/main/div[1]/div[1]/div/div[1]/div[2]/div/div[1]/span[1]/span').is_displayed:
+if browser.find_element(By.XPATH, '/html/body/div[1]/div[2]/div/div[2]/div/div/div[2]/div[1]/div[2]/span').is_displayed:
     #Locaing element as text
-    CRT_price = browser.find_element(By.XPATH, '/html/body/div[3]/main/div[1]/div[1]/div/div[1]/div[2]/div/div[1]/span[1]/span').text
+    CRT_price = browser.find_element(By.XPATH, '/html/body/div[1]/div[2]/div/div[2]/div/div/div[2]/div[1]/div[2]/span').text
 
     # Close browser
     browser.quit()
@@ -296,6 +305,7 @@ plt.xlabel('NFT ID')
 plt.ylabel('Общи награди (USD)')
 plt.xticks(rotation=90)
 plt.tight_layout()
+plt.savefig(f"{date_folder}/rewards_per_nft.png", dpi=300)
 plt.show()
 
 # Групиране по Rarity Class и изчисляване на общите награди и броя на NFT-та
@@ -327,6 +337,7 @@ plt.ylabel('Общи награди (CRT)')
 plt.xticks(rotation=45)
 
 plt.tight_layout()
+plt.savefig(f"{date_folder}/average_rewards_distribution.png", dpi=300)
 plt.show()
 
 
@@ -344,6 +355,7 @@ plt.ylabel('Общи награди (CRT)')
 plt.xticks(rotation=45)
 
 plt.tight_layout()
+plt.savefig(f"{date_folder}/weekly_rewards_staking.png", dpi=300)
 plt.show()
 
 
@@ -357,8 +369,8 @@ df_allLending['Date'] = pd.to_datetime(df_allLending['Date'])
 df_allLending['Date_ordinal'] = df_allLending['Date'].apply(lambda x: x.toordinal())
 
 # Filter to show only the last 3 months
-three_months_ago = df_allLending['Date'].max() - pd.DateOffset(months=3)
-df_allLending = df_allLending[df_allLending['Date'] > three_months_ago]
+months_ago = df_allLending['Date'].max() - pd.DateOffset(months=1)
+df_allLending = df_allLending[df_allLending['Date'] > months_ago]
 
 # Обучение на линейната регресия
 X = df_allLending[['Date_ordinal']]
@@ -367,7 +379,7 @@ model = LinearRegression()
 model.fit(X, y)
 
 # Предвиждане на бъдещите стойности за следващите 14 дни
-future_dates = [df_allLending['Date'].max() + pd.Timedelta(days=i) for i in range(1, 15)]
+future_dates = [df_allLending['Date'].max() + pd.Timedelta(days=i) for i in range(1, 8)]
 future_dates_ordinal = [d.toordinal() for d in future_dates]
 future_rewards = model.predict(np.array(future_dates_ordinal).reshape(-1, 1))
 
@@ -396,37 +408,37 @@ plt.axvline(x=df_allLending['Date'].max(), color='red', linestyle='--', label='S
 
 plt.fill_between(forecast_df['Date'], forecast_df['CRT'], color='green', alpha=0.1) # Подчертаване на прогнозата
 
-plt.title('Last 3 Months with 14 Day Forecast')
+plt.title('Last 1 Months with 7 Day Forecast')
 plt.legend(loc='upper left')
 plt.xlabel('Date')
 plt.ylabel('Rewards (CRT)')
 plt.grid(True, which='both', linestyle='--', linewidth=0.5)
 plt.tight_layout()
+plt.savefig(f"{date_folder}/linear_regression_forecast.png", dpi=300)
 plt.show()
 
 forecast_df.to_excel(writer1, sheet_name="Linear Reg Forecast", index=False)
 
 
 ### Holt Winthers algorithm(Triple Exponential Smoothing method)
-
 # Convert to datetime and set as index
 df = df[df['Label'].isin(['Player','Direct Lending','Borrowing'])]
 df_allLending['Date'] = pd.to_datetime(df_allLending['Date'])
 df_allLending.set_index('Date', inplace=True)
 
 # Филтриране на df_allLending за последните три месеца (подобно на линейната регресия)
-three_months_data = df_allLending[df_allLending.index > (df_allLending.index.max() - pd.DateOffset(months=3))]
+months_data = df_allLending[df_allLending.index > (df_allLending.index.max() - pd.DateOffset(months=3))]
 
 # Apply Holt-Winters на филтрираните данни
-model = ExponentialSmoothing(three_months_data['CRT'], trend='add', seasonal='add', seasonal_periods=7)
+model = ExponentialSmoothing(months_data['CRT'], trend='add', seasonal='add', seasonal_periods=7)
 model_fit = model.fit()
 
-# Прогноза за следващите 14 дни
-forecast_steps = 14
+# Прогноза за следващите 7 дни
+forecast_steps = 7
 forecast = model_fit.forecast(steps=forecast_steps)
 
 # Преобразуване на прогнозата в DataFrame
-forecast_dates = pd.date_range(start=three_months_data.index[-1] + pd.Timedelta(days=1), periods=forecast_steps, freq='D')
+forecast_dates = pd.date_range(start=months_data.index[-1] + pd.Timedelta(days=1), periods=forecast_steps, freq='D')
 forecast_df = pd.DataFrame({
     'Date': forecast_dates,
     'Holt-Winters Rewards': forecast
@@ -437,13 +449,13 @@ forecast_df.set_index('Date', inplace=True)
 plt.figure(figsize=(15, 6))
 
 # Реални данни
-plt.plot(three_months_data['CRT'], 'o-', label='Actual', color='blue')
+plt.plot(months_data['CRT'], 'o-', label='Actual', color='blue')
 
 # Прогнозирани данни
 plt.plot(forecast_df, 'x-', label='Forecast', color='red')
 
 # Чертане на вертикална линия, показваща началото на прогнозата
-plt.axvline(x=three_months_data.index[-1], color='green', linestyle='--', label='Start of Forecast')
+plt.axvline(x=months_data.index[-1], color='green', linestyle='--', label='Start of Forecast')
 
 plt.fill_between(forecast_df.index, forecast_df['Holt-Winters Rewards'], color='red', alpha=0.1) # Подчертаване на прогнозата
 
@@ -453,6 +465,7 @@ plt.xlabel('Date')
 plt.ylabel('Rewards (CRT)')
 plt.grid(True, which='both', linestyle='--', linewidth=0.5)
 plt.tight_layout()
+plt.savefig(f"{date_folder}/holt_winters_forecast.png", dpi=300)
 plt.show()
 
 # Показване на DataFrame с прогнозираните данни
@@ -461,7 +474,7 @@ forecast_df.to_excel(writer1, sheet_name="Holt-Winters Forecast", index=True)
 
 
 # Филтриране на df_allLending за последните три месеца
-three_months_data = df_allLending[df_allLending.index > (df_allLending.index.max() - pd.DateOffset(months=3))]
+months_data = df_allLending[df_allLending.index > (df_allLending.index.max() - pd.DateOffset(months=3))]
 
 linear_forecast_df = pd.DataFrame({
     'Date': future_dates,
@@ -477,7 +490,7 @@ combined_forecast['Difference (%)'] = ((combined_forecast['Holt-Winters Rewards'
 plt.figure(figsize=(15, 7))
 
 # Реални данни
-plt.plot(three_months_data['CRT'], 'o-', label='Actual', color='green', linewidth=2)
+plt.plot(months_data['CRT'], 'o-', label='Actual', color='green', linewidth=2)
 
 # Прогнозирани данни от Holt-Winters
 plt.plot(combined_forecast['Holt-Winters Rewards'], 's-', label='Holt-Winters', color='red', linewidth=2)
@@ -486,17 +499,18 @@ plt.plot(combined_forecast['Holt-Winters Rewards'], 's-', label='Holt-Winters', 
 plt.plot(combined_forecast['Linear Predicted Rewards'], 'x--', label='Linear Regression', color='blue', linewidth=2)
 
 # Чертане на вертикална линия, показваща началото на прогнозата
-plt.axvline(x=three_months_data.index[-1], color='grey', linestyle='--', label='Start of Forecast')
+plt.axvline(x=months_data.index[-1], color='grey', linestyle='--', label='Start of Forecast')
 
 # Подчертаване на областта на прогнозата
 plt.axvspan(combined_forecast.index[0], combined_forecast.index[-1], facecolor='yellow', alpha=0.1)
 
-plt.title('Comparison of Predictions for the Next 14 Days')
+plt.title('Comparison of Predictions for the Next 7 Days')
 plt.legend(loc='upper left')
 plt.xlabel('Date')
 plt.ylabel('Predicted Rewards')
 plt.grid(True, which='both', linestyle='--', linewidth=0.5)
 plt.tight_layout()
+plt.savefig(f"{date_folder}/comparison_forecast.png", dpi=300)
 plt.show()
 
 # Показване на обединената таблица с прогнози
